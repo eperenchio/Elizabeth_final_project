@@ -1,8 +1,8 @@
 #library(ggmap)
 #library(shiny)
 #library(sf)
-#library(dplyr)
 #library(RColorBrewer)
+#library(tidyverse)
 
 huge_df<- read.csv("data/combined_countries/combined.csv")
 world_df<- map_data("world")
@@ -36,9 +36,9 @@ co2_2020_df$percent<- ifelse(co2_2020_df$TOTAL_CO2_MED <=-0.01 & co2_2020_df$TOT
                                                   ifelse(co2_2020_df$TOTAL_CO2_MED <= -4 & co2_2020_df$TOTAL_CO2_MED > -5, "4-5%", 
                                                          ifelse(co2_2020_df$TOTAL_CO2_MED <= -5 & co2_2020_df$TOTAL_CO2_MED > -6, "Above 5%", no = NA))))))
 
-#create a smaller df with the columns needed for map
-co2_2020_df_wide<- co2_2020_df%>%
-  select(REGION_NAME.x, DATE, long, lat, group, TOTAL_CO2_MED, percent) %>%
+#create a WIDE df by turing columns to dates & fill with percent range
+wide_co2_2020_df<- co2_2020_df%>%
+  select(REGION_NAME.x, DATE, long, lat, group, percent) %>%
   pivot_wider(names_from = DATE, 
               values_from = percent,
               values_fill = list(value="NA"),
@@ -60,7 +60,7 @@ my_theme<- function (){
 
 elizabeth_server<- function(input, output){
   sliderValues<- reactive({
-    joined_df(
+    co2_2020_df(
       name = "Date:",
       value = input$DATE
     )
@@ -68,49 +68,35 @@ elizabeth_server<- function(input, output){
   output$map<- renderPlot({
     map_subset<- co2_2020_df[co2_2020_df$DATE == input$date, ]
     map<- ggplot()+
-                    geom_polygon(data = map_subset, aes(x = long, 
-                                                        y = lat, 
-                                                        group = group, 
-                                                        fill = as.factor(percent)))+
-                    geom_polygon(data = world_df, aes(x = long, 
-                                                      y = lat, 
-                                                      group = group,
-                                                      color = "grey",
-                                                      size = 1))+
-                    coord_map(xlim=c(-180,180)) +
-                    labs(
-                        x = NULL,
-                        y = NULL,
-                        title = NULL,
-                        fill= "Percent Change in Global CO2 Levels (Metric Tons))"
-                     )+
-                     my_theme()+
-                     scale_fill_brewer(palette = "Greens", direction = 1)
-                    })
-    output$table<- renderTable({
-      filtered_table<- subset(co2_2020_df, co2_2020_df$DATE == input$date)
-      polished_table<- filtered_table%>%
-        select(REGION_NAME.x, TOTAL_CO2_MED) %>%
-        rename(
-          Date = DATE,
-          Country = REGION_NAME.x,
-          Change_in_Emissions = TOTAL_CO2_MED
-        )
-      return(polished_table)
-    })
-    output$max_country_text<- renderText({
-      paste("This map shows the change in CO2 emissions on", input$date, ". 
+      geom_polygon(data=map_subset, mapping=aes(x = long, y = lat, group = group, fill = as.character(percent)))+
+      geom_path(data=world_df, mapping=aes(x = long, y = lat, group = group), color = "grey", size = .3)+
+      coord_map(xlim=c(-180,180)) +
+      labs(
+        x = NULL,
+        y = NULL,
+        title = NULL,
+        fill= "Percent Change in Global CO2 Levels (Metric Tons))"
+      )+
+      my_theme()+
+      scale_fill_brewer(palette="Reds", direction = -1)
+    return(map)
+  })
+}
+  
+  
+  
+colors = c("Less than 1%"="lightpink", "1-2%"="lightcoral", "2-3%"="brown1", "3-4%"="red2", "4-5%"="firebrick", "Above 5%"="darkred")  
+  
+  
+  output$max_country_text<- renderText({
+    paste("This map shows the change in CO2 emissions on", input$date, ". 
             Since lockdown dates and restrictions varied from country to country, 
             my goal was to evaluate which countries had the biggest reduction in CO2 
             emissions on different dates in 2020. From interacting with this map, one
             can tell that CO2 emissions declined globally during late March & most of April,
             but emissions eventually rose once countries came out of lockdown.")
-    })
-    width = 800
-    height = 550
-    return(map)
+  })
+  width = 800
+  height = 550
+  return(map)
 } 
-
-
-summary(co2_2020_df$TOTAL_CO2_MED, na.rm=TRUE)
-
